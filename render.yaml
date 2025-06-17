@@ -1,9 +1,0 @@
-services:
-  - type: worker
-    name: cezura-bot
-    env: python
-    buildCommand: pip install -r requirements.txt
-    startCommand: python cezura_bot.py
-    envVars:
-      - key: API_TOKEN
-    pythonVersion: 3.10.13
