@@ -37,6 +37,7 @@ async def send_welcome(message: Message):
 @dp.message_handler(commands=['курил'])
 async def log_smoke(message: Message):
     log_event(message.from_user.id, 'курил')
+    await message.reply("Записал: курил.")
 
 @dp.message_handler(commands=['удержался'])
 async def log_resist(message: Message):
