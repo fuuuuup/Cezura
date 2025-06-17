@@ -1,7 +1,10 @@
-envVars:
-  - key: API_TOKEN
-    value: "<токен вашего бота>"
-  - key: WEBHOOK_HOST
-    value: https://cezura.onrender.com
-  - key: PORT
-    value: "8000"
+services:
+  - type: worker
+    name: cezura-worker
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python cezura_bot.py
+    pythonVersion: 3.10
+    envVars:
+      - key: API_TOKEN
+        sync: false
