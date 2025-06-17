@@ -1,0 +1,10 @@
+services:
+  - type: background
+    name: cezura-worker
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: python cezura_bot.py
+    envVars:
+      - key: API_TOKEN
+        sync: false
+    pythonVersion: 3.13.4
