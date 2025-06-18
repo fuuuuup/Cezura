@@ -2,7 +2,20 @@ import logging, json, os
 from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.utils import executor
+from flask import Flask
+from threading import Thread
 
+# --- Flask server to keep web service alive ---
+app = Flask(__name__)
+
+@app.route('/')
+def index():
+    return "Бот работает"
+
+def run_flask():
+    app.run(host="0.0.0.0", port=8080)
+
+# --- Telegram Bot Logic ---
 API_TOKEN = os.getenv("API_TOKEN")
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot)
@@ -38,5 +51,8 @@ async def stats(message: types.Message):
     cnt = sum(1 for e in arr if e["event"] in ("курила","удержалась"))
     await message.reply(f"Всего сегодня: {cnt} раз.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
+    # Запускаем Flask в фоновом потоке
+    Thread(target=run_flask).start()
+    # Запускаем бота
     executor.start_polling(dp, skip_updates=True)
