@@ -43,7 +43,7 @@ def log_event(user_id, event_text):
     })
     save_data(d)
 
-# --- Обработка сообщений ---
+# --- Хендлеры записи ---
 @dp.message_handler(lambda msg: msg.text.lower().startswith("курила"))
 async def kurila(message: types.Message):
     log_event(message.from_user.id, message.text)
@@ -54,8 +54,31 @@ async def ud(message: types.Message):
     log_event(message.from_user.id, message.text)
     await message.reply("Молодец — удержалась.")
 
-@dp.message_handler(lambda msg: msg.text.lower().startswith("статистика"))
-async def stats(message: types.Message):
+# --- Универсальная функция отчета ---
+def build_report(data, start_time, detailed=True):
+    filtered = [
+        e for e in data
+        if datetime.fromisoformat(e["time"]) >= start_time
+    ]
+    kurila = [e for e in filtered if e["event"].lower().startswith("курила")]
+    ud = [e for e in filtered if e["event"].lower().startswith("удержалась")]
+
+    lines = [
+        f"Курила: {len(kurila)}",
+        f"Удержалась: {len(ud)}"
+    ]
+
+    if filtered and detailed:
+        lines.append("Комментарии:")
+        for e in filtered:
+            t = datetime.fromisoformat(e["time"]).strftime('%d.%m %H:%M')
+            lines.append(f" {t} — {e['event']}")
+
+    return "\n".join(lines)
+
+# --- Статистика: только день подробно, остальное кратко ---
+@dp.message_handler(lambda msg: msg.text.lower() == "статистика")
+async def stats_main(message: types.Message):
     data = load_data().get(str(message.from_user.id), [])
     if not data:
         await message.reply("Пока ничего не записано.")
@@ -63,36 +86,44 @@ async def stats(message: types.Message):
 
     now = datetime.utcnow() + timedelta(hours=3)
     periods = {
-        "сегодня": now.replace(hour=0, minute=0, second=0, microsecond=0),
+        "Сегодня": now.replace(hour=0, minute=0, second=0, microsecond=0),
         "7 дней": now - timedelta(days=7),
         "30 дней": now - timedelta(days=30),
         "180 дней": now - timedelta(days=180),
     }
 
-    report = []
+    msg_lines = []
 
     for label, start_time in periods.items():
-        filtered = [
-            e for e in data
-            if datetime.fromisoformat(e["time"]) >= start_time
-        ]
-        kurila = [e for e in filtered if e["event"].lower().startswith("курила")]
-        ud = [e for e in filtered if e["event"].lower().startswith("удержалась")]
+        detailed = (label == "Сегодня")
+        msg_lines.append(f"📅 *{label}*:")
+        msg_lines.append(build_report(data, start_time, detailed=detailed))
+        msg_lines.append("")
 
-        report.append(f"📅 *{label.capitalize()}*:")
-        report.append(f" Курила: {len(kurila)}")
-        report.append(f" Удержалась: {len(ud)}")
+    await message.reply("\n".join(msg_lines), parse_mode="Markdown")
 
-        if filtered:
-            report.append(" Комментарии:")
-            for e in filtered:
-                t = datetime.fromisoformat(e["time"]).strftime('%d.%m %H:%M')
-                report.append(f"  {t} — {e['event']}")
+# --- Команды для развёрнутой статистики ---
+@dp.message_handler(lambda msg: msg.text.lower() in ("статистика неделя", "статистика месяц", "статистика полгода"))
+async def stats_extended(message: types.Message):
+    periods = {
+        "статистика неделя": ("📅 Подробная статистика за 7 дней", timedelta(days=7)),
+        "статистика месяц": ("📅 Подробная статистика за 30 дней", timedelta(days=30)),
+        "статистика полгода": ("📅 Подробная статистика за 180 дней", timedelta(days=180)),
+    }
 
-        report.append("")
+    key = message.text.lower()
+    title, delta = periods[key]
 
-    await message.reply("\n".join(report), parse_mode="Markdown")
+    data = load_data().get(str(message.from_user.id), [])
+    if not data:
+        await message.reply("Пока ничего не записано.")
+        return
 
+    start_time = (datetime.utcnow() + timedelta(hours=3)) - delta
+    report = build_report(data, start_time, detailed=True)
+    await message.reply(f"*{title}*\n\n{report}", parse_mode="Markdown")
+
+# --- Сброс данных ---
 @dp.message_handler(lambda msg: msg.text.lower().startswith("сброс"))
 async def reset(message: types.Message):
     d = load_data()
@@ -103,10 +134,10 @@ async def reset(message: types.Message):
     else:
         await message.reply("Нечего удалять — записей не было.")
 
-# --- Напоминалка в 21:00 МСК ---
+# --- Напоминалка в 21:00 по МСК ---
 async def daily_check():
     while True:
-        now = datetime.utcnow() + timedelta(hours=3)  # МСК
+        now = datetime.utcnow() + timedelta(hours=3)
         if now.hour == 21 and now.minute == 0:
             data = load_data()
             for user_id_str, events in data.items():
@@ -120,7 +151,6 @@ async def daily_check():
                 count_today = sum(1 for dt, ev in user_events if dt >= today and ev.lower().startswith("курила"))
                 count_yesterday = sum(1 for dt, ev in user_events if yesterday <= dt < today and ev.lower().startswith("курила"))
 
-                # Сообщение
                 if count_today == 0:
                     msg = "🎉 Ты не курила ни разу сегодня. Это сильно. Ты — крепкая."
                 elif count_today < count_yesterday:
@@ -133,8 +163,7 @@ async def daily_check():
                 try:
                     await bot.send_message(int(user_id_str), msg)
                 except:
-                    pass  # вдруг юзер заблокировал бота
-
+                    pass
             await asyncio.sleep(60)
         else:
             await asyncio.sleep(20)
@@ -143,5 +172,6 @@ async def daily_check():
 if __name__ == "__main__":
     Thread(target=run_flask).start()
     loop = asyncio.get_event_loop()
+    loop.run_until_complete(bot.delete_webhook(drop_pending_updates=True))
     loop.create_task(daily_check())
     executor.start_polling(dp, skip_updates=True)
